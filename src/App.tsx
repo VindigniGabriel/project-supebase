@@ -5,7 +5,6 @@ import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import Login from './components/Login';
 import TaskApp from './components/TaskApp';
 import { supabase } from './supabaseClient';
-import './App.css';
 
 // Crear un tema personalizado
 const theme = createTheme({
