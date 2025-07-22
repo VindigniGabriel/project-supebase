@@ -1,22 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Box, 
   Typography, 
   List, 
   ListItem, 
   ListItemText, 
-  ListItemIcon, 
   ListItemSecondaryAction, 
   IconButton, 
   Checkbox,
   Paper,
   CircularProgress,
-  Alert
+  Alert,
+  Snackbar,
+  ListItemIcon
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import type { Task } from '../models/Task';
-import { getTasks, deleteTask, toggleTaskCompletion } from '../services/taskService';
+import { getTasks, deleteTask, toggleTaskCompletion, subscribeToTasks, unsubscribeFromTasks } from '../services/taskService';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface TaskListProps {
   onEditTask: (task: Task) => void;
@@ -27,20 +29,70 @@ export default function TaskList({ onEditTask, refreshTrigger }: TaskListProps) 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'info' | 'warning' | 'error'} | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     loadTasks();
+    
+    // Configurar la suscripción en tiempo real
+    channelRef.current = subscribeToTasks((payload) => {
+      // Manejar eventos en tiempo real
+      if (payload.eventType === 'INSERT') {
+        if (payload.new) {
+          setTasks(currentTasks => [payload.new!, ...currentTasks]);
+          setNotification({
+            message: 'Nueva tarea añadida',
+            type: 'success'
+          });
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        if (payload.new) {
+          setTasks(currentTasks => 
+            currentTasks.map(task => task.id === payload.new!.id ? payload.new! : task)
+          );
+          setNotification({
+            message: 'Tarea actualizada',
+            type: 'info'
+          });
+        }
+      } else if (payload.eventType === 'DELETE') {
+        if (payload.old) {
+          setTasks(currentTasks => 
+            currentTasks.filter(task => task.id !== payload.old!.id)
+          );
+          setNotification({
+            message: 'Tarea eliminada',
+            type: 'info'
+          });
+        }
+      }
+    });
+    
+    // Limpiar la suscripción cuando el componente se desmonte
+    return () => {
+      if (channelRef.current) {
+        unsubscribeFromTasks(channelRef.current);
+      }
+    };
+  }, []);
+  
+  // Efecto para recargar tareas cuando cambie el refreshTrigger
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadTasks();
+    }
   }, [refreshTrigger]);
 
   const loadTasks = async () => {
     try {
       setLoading(true);
       setError(null);
-      const fetchedTasks = await getTasks();
-      setTasks(fetchedTasks);
+      const tasksData = await getTasks();
+      setTasks(tasksData);
     } catch (err) {
-      console.error('Error al cargar tareas:', err);
-      setError('No se pudieron cargar las tareas. Inténtalo de nuevo más tarde.');
+      console.error('Error al cargar las tareas:', err);
+      setError('Error al cargar las tareas. Por favor, inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -66,6 +118,11 @@ export default function TaskList({ onEditTask, refreshTrigger }: TaskListProps) 
       console.error('Error al eliminar la tarea:', err);
       setError('No se pudo eliminar la tarea.');
     }
+  };
+
+  // Cerrar la notificación
+  const handleCloseNotification = () => {
+    setNotification(null);
   };
 
   if (loading) {
@@ -108,8 +165,8 @@ export default function TaskList({ onEditTask, refreshTrigger }: TaskListProps) 
                 <Checkbox
                   edge="start"
                   checked={task.is_completed}
-                  onChange={() => task.id && handleToggleComplete(task.id, task.is_completed)}
-                  color="primary"
+                  onChange={() => task.id && handleToggleComplete(task.id, !task.is_completed)}
+                  sx={{ mr: 2 }}
                 />
               </ListItemIcon>
               
@@ -145,6 +202,22 @@ export default function TaskList({ onEditTask, refreshTrigger }: TaskListProps) 
           ))}
         </List>
       )}
+      
+      {/* Notificación para cambios en tiempo real */}
+      <Snackbar 
+        open={notification !== null} 
+        autoHideDuration={3000} 
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notification?.type || 'info'} 
+          sx={{ width: '100%' }}
+        >
+          {notification?.message || ''}
+        </Alert>
+      </Snackbar>
     </Paper>
   );
 }

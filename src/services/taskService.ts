@@ -1,8 +1,12 @@
 import { supabase } from '../supabaseClient';
 import type { Task, TaskFormData } from '../models/Task';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 // Nombre de la tabla en Supabase
 const TASKS_TABLE = 'tasks';
+
+// Tipo para el callback de eventos en tiempo real
+type TaskRealtimeCallback = (payload: { new: Task | null, old: Task | null, eventType: 'INSERT' | 'UPDATE' | 'DELETE' }) => void;
 
 // Obtener todas las tareas del usuario actual
 export async function getTasks(): Promise<Task[]> {
@@ -78,4 +82,37 @@ export async function deleteTask(id: string): Promise<void> {
 // Marcar una tarea como completada o no completada
 export async function toggleTaskCompletion(id: string, isCompleted: boolean): Promise<Task> {
   return updateTask(id, { is_completed: isCompleted });
+}
+
+// Suscribirse a cambios en tiempo real de las tareas
+export function subscribeToTasks(callback: TaskRealtimeCallback): RealtimeChannel {
+  // Suscribirse a la tabla de tareas
+  const channel = supabase
+    .channel('tasks-changes')
+    .on('postgres_changes', 
+      { 
+        event: '*', // Escuchar todos los eventos (INSERT, UPDATE, DELETE)
+        schema: 'public',
+        table: TASKS_TABLE
+      }, 
+      (payload) => {
+        // Convertir el payload al formato esperado por el callback
+        const eventData = {
+          new: payload.new as Task | null,
+          old: payload.old as Task | null,
+          eventType: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE'
+        };
+        
+        // Llamar al callback con los datos del evento
+        callback(eventData);
+      }
+    )
+    .subscribe();
+
+  return channel;
+}
+
+// Cancelar suscripción a cambios en tiempo real
+export function unsubscribeFromTasks(channel: RealtimeChannel): void {
+  supabase.removeChannel(channel);
 }
