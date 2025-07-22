@@ -1,13 +1,11 @@
 import { supabase } from '../supabaseClient';
-import { Task, TaskFormData } from '../models/Task';
+import type { Task, TaskFormData } from '../models/Task';
 
 // Nombre de la tabla en Supabase
 const TASKS_TABLE = 'tasks';
 
 // Obtener todas las tareas del usuario actual
 export async function getTasks(): Promise<Task[]> {
-  const user = supabase.auth.getUser();
-  
   const { data, error } = await supabase
     .from(TASKS_TABLE)
     .select('*')
