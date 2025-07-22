@@ -36,42 +36,63 @@ export default function TaskList({ onEditTask, refreshTrigger }: TaskListProps) 
     loadTasks();
     
     // Configurar la suscripción en tiempo real
-    channelRef.current = subscribeToTasks((payload) => {
-      // Manejar eventos en tiempo real
-      if (payload.eventType === 'INSERT') {
-        if (payload.new) {
-          setTasks(currentTasks => [payload.new!, ...currentTasks]);
-          setNotification({
-            message: 'Nueva tarea añadida',
-            type: 'success'
-          });
-        }
-      } else if (payload.eventType === 'UPDATE') {
-        if (payload.new) {
-          setTasks(currentTasks => 
-            currentTasks.map(task => task.id === payload.new!.id ? payload.new! : task)
-          );
-          setNotification({
-            message: 'Tarea actualizada',
-            type: 'info'
-          });
-        }
-      } else if (payload.eventType === 'DELETE') {
-        if (payload.old) {
-          setTasks(currentTasks => 
-            currentTasks.filter(task => task.id !== payload.old!.id)
-          );
-          setNotification({
-            message: 'Tarea eliminada',
-            type: 'info'
-          });
-        }
+    const setupRealtimeSubscription = async () => {
+      try {
+        channelRef.current = await subscribeToTasks((payload) => {
+          console.log('Callback received payload:', payload);
+          // Manejar eventos en tiempo real
+          if (payload.eventType === 'INSERT') {
+            if (payload.new) {
+              // Verificar si la tarea ya existe antes de añadirla
+              setTasks(currentTasks => {
+                // Si la tarea ya existe en el array, no la añadimos de nuevo
+                const taskExists = currentTasks.some(task => task.id === payload.new!.id);
+                if (taskExists) {
+                  console.log(`Task ${payload.new!.id} already exists, skipping insert`);
+                  return currentTasks;
+                }
+                console.log(`Adding new task ${payload.new!.id} to list`);
+                setNotification({
+                  message: 'Nueva tarea añadida',
+                  type: 'success'
+                });
+                return [payload.new!, ...currentTasks];
+              });
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            if (payload.new) {
+              setTasks(currentTasks => 
+                currentTasks.map(task => task.id === payload.new!.id ? payload.new! : task)
+              );
+              setNotification({
+                message: 'Tarea actualizada',
+                type: 'info'
+              });
+            }
+          } else if (payload.eventType === 'DELETE') {
+            if (payload.old) {
+              setTasks(currentTasks => 
+                currentTasks.filter(task => task.id !== payload.old!.id)
+              );
+              setNotification({
+                message: 'Tarea eliminada',
+                type: 'info'
+              });
+            }
+          }
+        });
+        console.log('Realtime subscription setup complete');
+      } catch (error) {
+        console.error('Error setting up realtime subscription:', error);
       }
-    });
+    };
+    
+    setupRealtimeSubscription();
     
     // Limpiar la suscripción cuando el componente se desmonte
     return () => {
       if (channelRef.current) {
+        console.log('Unsubscribing from realtime channel');
         unsubscribeFromTasks(channelRef.current);
       }
     };
@@ -80,7 +101,10 @@ export default function TaskList({ onEditTask, refreshTrigger }: TaskListProps) 
   // Efecto para recargar tareas cuando cambie el refreshTrigger
   useEffect(() => {
     if (refreshTrigger > 0) {
-      loadTasks();
+      // En lugar de recargar todas las tareas, solo actualizamos el estado local
+      // ya que la suscripción realtime se encargará de mantener sincronizado el estado
+      console.log('Refresh trigger activated - skipping full reload to avoid duplicates');
+      // No llamamos a loadTasks() para evitar duplicados
     }
   }, [refreshTrigger]);
 
